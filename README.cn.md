@@ -91,6 +91,10 @@
 docker run -it --rm --privileged --shm-size=256m -p 5050:5050 criyle/executorserver
 ```
 
+```bash
+docker run -it -d --privileged --shm-size=256m -p 5050:5050 executorserver
+```
+
 #### 编译 docker
 
 终端中运行 `docker build -t executorserver -f Dockerfile.exec .`

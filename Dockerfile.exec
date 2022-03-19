@@ -1,21 +1,38 @@
-FROM golang:latest AS build 
+FROM golang:1.17
 
-WORKDIR /go/judge
+LABEL maintainer="Quezr 'ssacgn.online'"
 
-COPY go.mod go.sum /go/judge/
+ENV GOPROXY https://goproxy.cn,direct
 
-RUN go mod download -x
+USER root
+RUN sed -i 's/deb.debian.org/mirrors.tuna.tsinghua.edu.cn/' /etc/apt/sources.list && \
+    sed -i 's/security.debian.org/mirrors.tuna.tsinghua.edu.cn/' /etc/apt/sources.list && \
+    sed -i 's/security-cdn.debian.org/mirrors.tuna.tsinghua.edu.cn/' /etc/apt/sources.list && \
+    apt-get update && \
+    apt-get upgrade -y
+
+
+RUN apt-get install -y --no-install-recommends \
+    vim \
+    openjdk-11-jdk
+
+RUN apt-get clean && \
+    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* && \
+    rm /var/log/lastlog /var/log/faillog
 
 COPY ./ /go/judge
 
-RUN CGO_ENABLE=0 go build -v -tags nomsgpack -o executorserver ./cmd/executorserver 
+WORKDIR /go/judge
 
-FROM debian:latest
+RUN go mod download -x
+
+RUN CGO_ENABLE=0 go build -v -tags nomsgpack -o server ./cmd/executorserver
+
+RUN cp /go/judge/server /opt/
+RUN cp /go/judge/mount.yaml /opt/
 
 WORKDIR /opt
 
-COPY --from=build /go/judge/executorserver /go/judge/mount.yaml /opt/
-
 EXPOSE 5050/tcp 5051/tcp
 
-ENTRYPOINT ["./executorserver"]
+ENTRYPOINT ["./server"]
