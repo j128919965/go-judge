@@ -92,7 +92,7 @@ docker run -it --rm --privileged --shm-size=256m -p 5050:5050 criyle/executorser
 ```
 
 ```bash
-docker run -it -d --privileged --shm-size=256m -p 5050:5050 executorserver
+docker run --name executorserver -it -d --privileged --shm-size=256m -p 5050:5050 executorserver 
 ```
 
 #### 编译 docker
