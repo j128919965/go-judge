@@ -33,6 +33,4 @@ RUN cp /go/judge/mount.yaml /opt/
 
 WORKDIR /opt
 
-EXPOSE 5050/tcp 5051/tcp
-
 ENTRYPOINT ["./server"]
