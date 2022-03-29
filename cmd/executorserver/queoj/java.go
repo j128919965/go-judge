@@ -9,7 +9,6 @@ import (
 	record_status "github.com/criyle/go-judge/cmd/executorserver/queoj/record-status"
 	"github.com/criyle/go-judge/envexec"
 	"github.com/tal-tech/go-zero/core/logx"
-	"io/ioutil"
 )
 
 
@@ -56,6 +55,7 @@ func (svc *ServiceContext) submitJava(record *Record) {
 	}
 
 	if result.output != io.OutTxt {
+		logx.Infof("输出：'%s' , 答案：'%s'",result.output,io.OutTxt)
 		record.Status = record_status.WrongAnswer
 		return
 	}else {
@@ -172,13 +172,16 @@ func (svc *ServiceContext)runJava(classId, input string, tl, sl uint64) (uint32,
 		}
 	}
 
-
-	out,_ := ioutil.ReadAll(rt.Results[0].Files["stdout"])
+	response, err := model.ConvertResponse(rt, true)
+	if err != nil {
+		logx.Error(err)
+	}
+	out := response.Results[0].Files["stdout"]
 	tu := uint64(rt.Results[0].Time)
 	su := uint64(rt.Results[0].Memory)
 
 	return record_status.Accept, &JudgeResult{
-		output:    string(out),
+		output:    out,
 		timeUsed:  tu,
 		spaceUsed: su,
 	}, nil
