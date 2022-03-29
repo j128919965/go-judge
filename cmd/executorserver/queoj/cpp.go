@@ -43,10 +43,10 @@ func (svc *ServiceContext) submitCpp(record *Record) {
 	}
 
 	if result.output != io.OutTxt {
-		logx.Infof("输出：'%s' , 答案：'%s'",result.output,io.OutTxt)
+		logx.Infof("输出：'%s' , 答案：'%s'", result.output, io.OutTxt)
 		record.Status = record_status.WrongAnswer
 		return
-	}else {
+	} else {
 		record.Status = record_status.Accept
 		record.TimeUsed = result.timeUsed
 		record.SpaceUsed = result.spaceUsed
@@ -57,33 +57,33 @@ func (svc *ServiceContext) submitCpp(record *Record) {
 
 func (svc *ServiceContext) compileCpp(code *string) (string, error) {
 	req := model.Request{Cmd: []model.Cmd{{
-		Args:              []string{"/usr/bin/g++", "a.cc" ,"-o", "a"},
-		Env:               []string{"PATH=/usr/bin:/bin"},
-		Files:             []*model.CmdFile{
+		Args: []string{"/usr/bin/g++", "a.cpp", "-o", "aOut"},
+		Env:  []string{"PATH=/usr/bin:/bin"},
+		Files: []*model.CmdFile{
 			{
 				Content: &EmptyStr,
 			},
 			{
 				Name: &StdOut,
-				Max: &StdOutLimit,
+				Max:  &StdOutLimit,
 			},
 			{
 				Name: &StdErr,
-				Max: &StdOutLimit,
+				Max:  &StdOutLimit,
 			},
 		},
-		CPULimit:          10000000000,
-		MemoryLimit:       1048576000,
-		ProcLimit:         50,
-		CopyIn:            map[string]model.CmdFile{
-			"a.cc":{
+		CPULimit:    10000000000,
+		MemoryLimit: 1048576000,
+		ProcLimit:   50,
+		CopyIn: map[string]model.CmdFile{
+			"a.cpp": {
 				Content: code,
 			},
 		},
-		CopyOut:           []string{"stdout", "stderr"},
-		CopyOutCached:     []string{"a.cc", "a"},
-		CopyOutDir:        "1",
-		}}}
+		CopyOut:       []string{"stdout", "stderr"},
+		CopyOutCached: []string{"a.cpp", "aOut"},
+		CopyOutDir:    "1",
+	}}}
 
 	request, err := model.ConvertRequest(&req, "")
 	if err != nil {
@@ -92,40 +92,40 @@ func (svc *ServiceContext) compileCpp(code *string) (string, error) {
 	}
 	rtCh, _ := svc.worker.Submit(context.Background(), request)
 	rt := <-rtCh
-	logx.Infof("response : %+v",rt)
+	logx.Infof("response : %+v", rt)
 	if rt.Error != nil {
-		return "",err
+		return "", err
 	}
 	status := rt.Results[0].Status
 	if status != envexec.StatusAccepted {
 		return "", errors.New("编译错误")
 	}
 
-	return rt.Results[0].FileIDs["Main.class"] , nil
+	return rt.Results[0].FileIDs["Main.class"], nil
 }
 
 func (svc *ServiceContext) runCpp(classId, input string, tl, sl uint64) (uint32, *JudgeResult, error) {
 	req := model.Request{Cmd: []model.Cmd{{
-		Args:              []string{"a"},
-		Env:               []string{"PATH=/usr/bin:/bin"},
-		Files:             []*model.CmdFile{
+		Args: []string{"aOut"},
+		Env:  []string{"PATH=/usr/bin:/bin"},
+		Files: []*model.CmdFile{
 			{
 				Content: &input,
 			},
 			{
 				Name: &StdOut,
-				Max: &StdOutLimit,
+				Max:  &StdOutLimit,
 			},
 			{
 				Name: &StdErr,
-				Max: &StdOutLimit,
+				Max:  &StdOutLimit,
 			},
 		},
-		CPULimit:          tl,
-		MemoryLimit:       sl,
-		ProcLimit:         50,
-		CopyIn:            map[string]model.CmdFile{
-			"a":{
+		CPULimit:    tl,
+		MemoryLimit: sl,
+		ProcLimit:   50,
+		CopyIn: map[string]model.CmdFile{
+			"aOut": {
 				FileID: &classId,
 			},
 		},
@@ -134,13 +134,13 @@ func (svc *ServiceContext) runCpp(classId, input string, tl, sl uint64) (uint32,
 	request, err := model.ConvertRequest(&req, "")
 	if err != nil {
 		logx.Error(err)
-		return 0,nil, err
+		return 0, nil, err
 	}
 	rtCh, _ := svc.worker.Submit(context.Background(), request)
 	rt := <-rtCh
-	logx.Infof("response : %+v",rt)
+	logx.Infof("response : %+v", rt)
 	if rt.Error != nil {
-		return 0,nil,err
+		return 0, nil, err
 	}
 	status := rt.Results[0].Status
 	if status != envexec.StatusAccepted {
