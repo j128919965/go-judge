@@ -9,7 +9,6 @@ import (
 	"flag"
 	"log"
 	math_rand "math/rand"
-	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -19,31 +18,20 @@ import (
 	"time"
 
 	"github.com/criyle/go-judge/cmd/executorserver/config"
-	grpcexecutor "github.com/criyle/go-judge/cmd/executorserver/grpc_executor"
 	restexecutor "github.com/criyle/go-judge/cmd/executorserver/rest_executor"
 	"github.com/criyle/go-judge/cmd/executorserver/version"
-	wsexecutor "github.com/criyle/go-judge/cmd/executorserver/ws_executor"
 	"github.com/criyle/go-judge/env"
 	"github.com/criyle/go-judge/env/pool"
 	"github.com/criyle/go-judge/envexec"
 	"github.com/criyle/go-judge/filestore"
-	"github.com/criyle/go-judge/pb"
 	"github.com/criyle/go-judge/worker"
 	ginpprof "github.com/gin-contrib/pprof"
 	ginzap "github.com/gin-contrib/zap"
 	"github.com/gin-gonic/gin"
-	grpc_middleware "github.com/grpc-ecosystem/go-grpc-middleware"
-	grpc_auth "github.com/grpc-ecosystem/go-grpc-middleware/auth"
-	grpc_zap "github.com/grpc-ecosystem/go-grpc-middleware/logging/zap"
-	grpc_recovery "github.com/grpc-ecosystem/go-grpc-middleware/recovery"
-	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
 	ginprometheus "github.com/zsais/go-gin-prometheus"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"golang.org/x/sync/errgroup"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 )
 
 var logger *zap.Logger
@@ -85,23 +73,6 @@ func main() {
 		sig <- os.Interrupt
 	}()
 
-	// Init gRPC server
-	var grpcServer *grpc.Server
-	if conf.EnableGRPC {
-		esServer := grpcexecutor.New(work, fs, conf.SrcPrefix, logger)
-		grpcServer = newGRPCServer(conf, esServer)
-
-		lis, err := net.Listen("tcp", conf.GRPCAddr)
-		if err != nil {
-			log.Fatalln(err)
-		}
-		go func() {
-			logger.Sugar().Info("Starting gRPC server at ", conf.GRPCAddr)
-			logger.Sugar().Info("gRPC server stopped: ", grpcServer.Serve(lis))
-			sig <- os.Interrupt
-		}()
-	}
-
 	// background force GC worker
 	newForceGCWorker(conf)
 
@@ -127,13 +98,6 @@ func main() {
 		return srv.Shutdown(ctx)
 	})
 
-	if grpcServer != nil {
-		eg.Go(func() error {
-			grpcServer.GracefulStop()
-			logger.Sugar().Info("GRPC server shutdown")
-			return nil
-		})
-	}
 
 	if fsCleanUp != nil {
 		eg.Go(func() error {
@@ -246,43 +210,12 @@ func initHTTPMux(conf *config.Config, work worker.Worker, fs filestore.FileStore
 	restHandle := restexecutor.New(work, fs, conf.SrcPrefix, logger)
 	restHandle.Register(r)
 
-	// WebSocket Handle
-	wsHandle := wsexecutor.New(work, conf.SrcPrefix, logger)
-	wsHandle.Register(r)
 
 	// pprof
 	if conf.EnableDebug {
 		ginpprof.Register(r)
 	}
 	return r
-}
-
-func newGRPCServer(conf *config.Config, esServer pb.ExecutorServer) *grpc.Server {
-	var grpcServer *grpc.Server
-	grpc_zap.ReplaceGrpcLoggerV2(logger)
-	streamMiddleware := []grpc.StreamServerInterceptor{
-		grpc_prometheus.StreamServerInterceptor,
-		grpc_zap.StreamServerInterceptor(logger),
-		grpc_recovery.StreamServerInterceptor(),
-	}
-	unaryMiddleware := []grpc.UnaryServerInterceptor{
-		grpc_prometheus.UnaryServerInterceptor,
-		grpc_zap.UnaryServerInterceptor(logger),
-		grpc_recovery.UnaryServerInterceptor(),
-	}
-	if conf.AuthToken != "" {
-		authFunc := grpcTokenAuth(conf.AuthToken)
-		streamMiddleware = append(streamMiddleware, grpc_auth.StreamServerInterceptor(authFunc))
-		unaryMiddleware = append(unaryMiddleware, grpc_auth.UnaryServerInterceptor(authFunc))
-	}
-	grpcServer = grpc.NewServer(
-		grpc.StreamInterceptor(grpc_middleware.ChainStreamServer(streamMiddleware...)),
-		grpc.UnaryInterceptor(grpc_middleware.ChainUnaryServer(unaryMiddleware...)),
-	)
-	pb.RegisterExecutorServer(grpcServer, esServer)
-	grpc_prometheus.Register(grpcServer)
-	grpc_prometheus.EnableHandlingTimeHistogram()
-	return grpcServer
 }
 
 func initGinMetrics(r *gin.Engine) {
@@ -302,19 +235,6 @@ func tokenAuth(token string) gin.HandlerFunc {
 			return
 		}
 		c.AbortWithStatus(http.StatusUnauthorized)
-	}
-}
-
-func grpcTokenAuth(token string) func(context.Context) (context.Context, error) {
-	return func(ctx context.Context) (context.Context, error) {
-		reqToken, err := grpc_auth.AuthFromMD(ctx, "bearer")
-		if err != nil {
-			return nil, err
-		}
-		if reqToken != token {
-			return nil, status.Errorf(codes.Unauthenticated, "invalid auth token: %v", err)
-		}
-		return ctx, nil
 	}
 }
 
