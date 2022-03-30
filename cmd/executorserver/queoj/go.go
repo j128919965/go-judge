@@ -2,6 +2,7 @@ package queoj
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/criyle/go-judge/cmd/executorserver/model"
@@ -9,6 +10,8 @@ import (
 	record_status "github.com/criyle/go-judge/cmd/executorserver/queoj/record-status"
 	"github.com/criyle/go-judge/envexec"
 	"github.com/tal-tech/go-zero/core/logx"
+	"github.com/valyala/fasthttp"
+	"strconv"
 )
 
 func (svc *ServiceContext) submitGo(record *Record) {
@@ -55,53 +58,70 @@ func (svc *ServiceContext) submitGo(record *Record) {
 	logx.Info(fmt.Sprintf("judge cpp {%d} success .", record.Id))
 }
 
-func (svc *ServiceContext) compileGo(code *string) (string, error) {
-	req := model.Request{Cmd: []model.Cmd{{
-		Args:              []string{"/usr/local/go/bin/go","build","main.go"},
-		Env:               []string{"GOPATH=/go","GOCACHE=/w/go-build-cache"},
-		Files:             []*model.CmdFile{
-			{
-				Content: &EmptyStr,
-			},
-			{
-				Name: &StdOut,
-				Max: &StdOutLimit,
-			},
-			{
-				Name: &StdErr,
-				Max: &StdOutLimit,
-			},
-		},
-		CPULimit:          10000000000,
-		MemoryLimit:       1048576000,
-		ProcLimit:         50,
-		CopyIn:            map[string]model.CmdFile{
-			"main.go":{
-				Content: code,
-			},
-		},
-		CopyOut:           []string{"stdout", "stderr"},
-		CopyOutCached:     []string{"main"},
-		CopyOutDir:        "1",
-		}}}
 
-	request, err := model.ConvertRequest(&req, "")
+const GoCompileReq = `{
+    "cmd": [{
+        "args": ["/usr/local/go/bin/go","build","main.go"],
+        "env": ["GOPATH=/go","GOCACHE=/w/go-build-cache"],
+        "files": [{
+            "content": ""
+        }, {
+            "name": "stdout",
+            "max": 10240
+        }, {
+            "name": "stderr",
+            "max": 10240
+        }],
+        "cpuLimit": 10000000000,
+        "memoryLimit": 104857600,
+        "procLimit": 50,
+        "strictMemoryLimit": false,
+        "copyOut": ["stdout", "stderr"],
+        "copyOutCached": ["main"],
+        "copyIn": {
+            "main.go": {
+                "content": %s
+            }
+        }
+    }]
+}`
+
+
+
+func (svc *ServiceContext) compileGo(code *string) (string, error) {
+	req := &fasthttp.Request{}
+	compileStr := fmt.Sprintf(GoCompileReq, strconv.Quote(*code))
+	fmt.Println(compileStr)
+	req.SetBody([]byte(compileStr))
+	// 默认是application/x-www-form-urlencoded
+	req.Header.SetContentType("application/json")
+	req.Header.SetMethod("POST")
+	req.SetRequestURI(JudgeUrl)
+
+	resp := &fasthttp.Response{}
+	client := &fasthttp.Client{}
+	err := client.Do(req, resp)
 	if err != nil {
 		logx.Error(err)
-		return "", err
-	}
-	rtCh, _ := svc.worker.Submit(context.Background(), request)
-	rt := <-rtCh
-	logx.Infof("response : %+v",rt)
-	if rt.Error != nil {
-		return "",err
-	}
-	status := rt.Results[0].Status
-	if status != envexec.StatusAccepted {
-		return "", errors.New("编译错误")
+		panic(err.Error())
 	}
 
-	return rt.Results[0].FileIDs["Main.class"] , nil
+	var m []interface{}
+	body := resp.Body()
+	err = json.Unmarshal(body, &m)
+	if err != nil {
+		logx.Error(string(body))
+		return "", err
+	}
+
+	respMap := m[0].(map[string]interface{})
+	if respMap["status"] != "Accepted" {
+		err := respMap["files"].(map[string]interface{})["stderr"].(string)
+		return "", errors.New(err)
+	}
+
+	classId := respMap["fileIds"].(map[string]interface{})["main"].(string)
+	return classId, nil
 }
 
 func (svc *ServiceContext) runGo (classId, input string, tl, sl uint64) (uint32, *JudgeResult, error) {
