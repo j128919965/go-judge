@@ -9,7 +9,9 @@ import (
 	"github.com/criyle/go-judge/cmd/executorserver/queoj/problemclient"
 	record_status "github.com/criyle/go-judge/cmd/executorserver/queoj/record-status"
 	"github.com/criyle/go-judge/envexec"
+	"github.com/criyle/go-judge/worker"
 	"github.com/tal-tech/go-zero/core/logx"
+	"github.com/valyala/fasthttp"
 	"strconv"
 )
 
@@ -87,53 +89,47 @@ func (svc *ServiceContext) submitCpp(record *Record) {
 	logx.Info(fmt.Sprintf("judge cpp {%d} success .", record.Id))
 }
 
+const JudgeUrl = `http://localhost:5050/run`
+
 func (svc *ServiceContext) compileCpp(code *string) (string, error) {
-	//req := model.Request{Cmd: []model.Cmd{{
-	//	Args: []string{"/usr/bin/g++", "a.cpp", "-o", "aOut"},
-	//	Env:  []string{"PATH=/usr/bin:/bin"},
-	//	Files: []*model.CmdFile{
-	//		{
-	//			Content: &EmptyStr,
-	//		},
-	//		{
-	//			Name: &StdOut,
-	//			Max:  &StdOutLimit,
-	//		},
-	//		{
-	//			Name: &StdErr,
-	//			Max:  &StdOutLimit,
-	//		},
-	//	},
-	//	CPULimit:    10000000000,
-	//	MemoryLimit: 1048576000,
-	//	ProcLimit:   50,
-	//	CopyIn: map[string]model.CmdFile{
-	//		"a.cpp": {
-	//			Content: code,
-	//		},
-	//	},
-	//	CopyOut:       []string{"stdout", "stderr"},
-	//	CopyOutCached: []string{"a.cpp", "aOut"},
-	//	CopyOutDir:    "1",
-	//}}}
-	var req model.Request
+	//var req model.Request
+	//compileStr := fmt.Sprintf(CppCompileReq, strconv.Quote(*code))
+	//err := json.Unmarshal([]byte(compileStr), &req)
+	//if err != nil {
+	//	logx.Error(err)
+	//	return "",err
+	//}
+	//
+	//request, err := model.ConvertRequest(&req, "")
+	//if err != nil {
+	//	logx.Error(err)
+	//	return "", err
+	//}
+	//rtCh, _ := svc.worker.Submit(context.Background(), request)
+	//rt := <-rtCh
+	req := &fasthttp.Request{}
 	compileStr := fmt.Sprintf(CppCompileReq, strconv.Quote(*code))
-	err := json.Unmarshal([]byte(compileStr), &req)
+	req.SetBody([]byte(compileStr))
+	// 默认是application/x-www-form-urlencoded
+	req.Header.SetContentType("application/json")
+	req.Header.SetMethod("POST")
+	req.SetRequestURI(JudgeUrl)
+
+	resp := &fasthttp.Response{}
+	client := &fasthttp.Client{}
+	err := client.Do(req, resp)
 	if err != nil {
 		logx.Error(err)
-		return "",err
+		panic(err.Error())
 	}
 
-	marshal, _ := json.Marshal(&req)
-	fmt.Println(string(marshal))
-
-	request, err := model.ConvertRequest(&req, "")
+	var rt worker.Response
+	err = json.Unmarshal(resp.Body(), &rt)
 	if err != nil {
-		logx.Error(err)
+		logx.Error(string(resp.Body()))
 		return "", err
 	}
-	rtCh, _ := svc.worker.Submit(context.Background(), request)
-	rt := <-rtCh
+
 	logx.Infof("response : %+v", rt)
 	if rt.Error != nil {
 		return "", err

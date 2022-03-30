@@ -2,6 +2,7 @@ package restexecutor
 
 import (
 	"encoding/json"
+	"github.com/tal-tech/go-zero/core/logx"
 	"net/http"
 
 	"github.com/criyle/go-judge/cmd/executorserver/model"
@@ -64,7 +65,8 @@ func (h *handle) handleRun(c *gin.Context) {
 		c.AbortWithStatusJSON(http.StatusBadRequest, err.Error())
 		return
 	}
-	h.logger.Sugar().Debugf("request: %+v", r)
+
+	logx.Infof("request: %+v", r)
 	rtCh, _ := h.worker.Submit(c.Request.Context(), r)
 	rt := <-rtCh
 	h.logger.Sugar().Debugf("response: %+v", rt)
