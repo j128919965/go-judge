@@ -9,7 +9,6 @@ import (
 	"github.com/criyle/go-judge/cmd/executorserver/queoj/problemclient"
 	record_status "github.com/criyle/go-judge/cmd/executorserver/queoj/record-status"
 	"github.com/criyle/go-judge/envexec"
-	"github.com/criyle/go-judge/worker"
 	"github.com/tal-tech/go-zero/core/logx"
 	"github.com/valyala/fasthttp"
 	"strconv"
@@ -123,23 +122,22 @@ func (svc *ServiceContext) compileCpp(code *string) (string, error) {
 		panic(err.Error())
 	}
 
-	var rt worker.Response
-	err = json.Unmarshal(resp.Body(), &rt)
+	var m []interface{}
+	body := resp.Body()
+	err = json.Unmarshal(body, &m)
 	if err != nil {
-		logx.Error(string(resp.Body()))
+		logx.Error(string(body))
 		return "", err
 	}
 
-	logx.Infof("response : %+v", rt)
-	if rt.Error != nil {
-		return "", err
-	}
-	status := rt.Results[0].Status
-	if status != envexec.StatusAccepted {
-		return "", errors.New("编译错误")
+	respMap := m[0].(map[string]interface{})
+	if respMap["status"] != "Accepted" {
+		err := respMap["files"].(map[string]interface{})["stderr"].(string)
+		return "", errors.New(err)
 	}
 
-	return rt.Results[0].FileIDs["Main.class"], nil
+	classId := respMap["fileIds"].(map[string]interface{})["a"].(string)
+	return classId, nil
 }
 
 var CppRunReq = `
@@ -170,32 +168,6 @@ var CppRunReq = `
 `
 
 func (svc *ServiceContext) runCpp(classId, input string, tl, sl uint64) (uint32, *JudgeResult, error) {
-	//req := model.Request{Cmd: []model.Cmd{{
-	//	Args: []string{"a"},
-	//	Env:  []string{"PATH=/usr/bin:/bin"},
-	//	Files: []*model.CmdFile{
-	//		{
-	//			Content: &input,
-	//		},
-	//		{
-	//			Name: &StdOut,
-	//			Max:  &StdOutLimit,
-	//		},
-	//		{
-	//			Name: &StdErr,
-	//			Max:  &StdOutLimit,
-	//		},
-	//	},
-	//	CPULimit:    tl,
-	//	MemoryLimit: sl,
-	//	ProcLimit:   50,
-	//	CopyIn: map[string]model.CmdFile{
-	//		"a": {
-	//			FileID: &classId,
-	//		},
-	//	},
-	//}}}
-
 	var req model.Request
 
 	compileStr := fmt.Sprintf(CppRunReq, input, tl,sl,classId)
