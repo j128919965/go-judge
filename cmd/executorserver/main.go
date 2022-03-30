@@ -59,13 +59,25 @@ func main() {
 	logx.Infof("Starting worker with parallelism=%d, workdir=%s, timeLimitCheckInterval=%v",
 		conf.Parallelism, conf.Dir, conf.TimeLimitCheckerInterval)
 
+	// Init http handle
+	r := initHTTPMux(conf, work, fs)
+	srv := http.Server{
+		Addr:    conf.HTTPAddr,
+		Handler: r,
+	}
 
 	svc := queoj.NewServiceContext(conf.Parallelism,work)
 	svc.Start()
 
 
 	// Gracefully shutdown, with signal / HTTP server / gRPC server
-	sig := make(chan os.Signal, 2)
+	sig := make(chan os.Signal, 3)
+
+	go func() {
+		logger.Sugar().Info("Starting http server at ", conf.HTTPAddr)
+		logger.Sugar().Info("Http server stopped: ", srv.ListenAndServe())
+		sig <- os.Interrupt
+	}()
 
 	// background force GC worker
 	newForceGCWorker(conf)
@@ -86,6 +98,11 @@ func main() {
 		work.Shutdown()
 		logx.Info("Worker shutdown")
 		return nil
+	})
+
+	eg.Go(func() error {
+		logger.Sugar().Info("Http server shutdown")
+		return srv.Shutdown(ctx)
 	})
 
 	eg.Go(func() error {

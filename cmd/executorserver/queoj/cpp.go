@@ -2,6 +2,7 @@ package queoj
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/criyle/go-judge/cmd/executorserver/model"
@@ -84,6 +85,9 @@ func (svc *ServiceContext) compileCpp(code *string) (string, error) {
 		CopyOutCached: []string{"a.cpp", "aOut"},
 		CopyOutDir:    "1",
 	}}}
+
+	marshal, _ := json.Marshal(&req)
+	fmt.Println(string(marshal))
 
 	request, err := model.ConvertRequest(&req, "")
 	if err != nil {
