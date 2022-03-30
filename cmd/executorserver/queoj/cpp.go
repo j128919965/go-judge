@@ -10,7 +10,38 @@ import (
 	record_status "github.com/criyle/go-judge/cmd/executorserver/queoj/record-status"
 	"github.com/criyle/go-judge/envexec"
 	"github.com/tal-tech/go-zero/core/logx"
+	"strconv"
 )
+
+
+var CppCompileReq = `
+{
+    "cmd": [{
+        "args": ["/usr/bin/g++", "a.cc" ,"-o","a"],
+        "env": ["PATH=/usr/bin:/bin"],
+        "files": [{
+            "content": ""
+        }, {
+            "name": "stdout",
+            "max": 10240
+        }, {
+            "name": "stderr",
+            "max": 10240
+        }],
+        "cpuLimit": 10000000000,
+        "memoryLimit": 104857600,
+        "procLimit": 50,
+        "copyIn": {
+            "a.cc": {
+                "content": %s
+            }
+        },
+        "copyOut": ["stdout", "stderr"],
+        "copyOutCached": ["a.cc", "a"],
+        "copyOutDir": "1"
+    }]
+}
+`
 
 func (svc *ServiceContext) submitCpp(record *Record) {
 	// 编译
@@ -57,34 +88,41 @@ func (svc *ServiceContext) submitCpp(record *Record) {
 }
 
 func (svc *ServiceContext) compileCpp(code *string) (string, error) {
-	req := model.Request{Cmd: []model.Cmd{{
-		Args: []string{"/usr/bin/g++", "a.cpp", "-o", "aOut"},
-		Env:  []string{"PATH=/usr/bin:/bin"},
-		Files: []*model.CmdFile{
-			{
-				Content: &EmptyStr,
-			},
-			{
-				Name: &StdOut,
-				Max:  &StdOutLimit,
-			},
-			{
-				Name: &StdErr,
-				Max:  &StdOutLimit,
-			},
-		},
-		CPULimit:    10000000000,
-		MemoryLimit: 1048576000,
-		ProcLimit:   50,
-		CopyIn: map[string]model.CmdFile{
-			"a.cpp": {
-				Content: code,
-			},
-		},
-		CopyOut:       []string{"stdout", "stderr"},
-		CopyOutCached: []string{"a.cpp", "aOut"},
-		CopyOutDir:    "1",
-	}}}
+	//req := model.Request{Cmd: []model.Cmd{{
+	//	Args: []string{"/usr/bin/g++", "a.cpp", "-o", "aOut"},
+	//	Env:  []string{"PATH=/usr/bin:/bin"},
+	//	Files: []*model.CmdFile{
+	//		{
+	//			Content: &EmptyStr,
+	//		},
+	//		{
+	//			Name: &StdOut,
+	//			Max:  &StdOutLimit,
+	//		},
+	//		{
+	//			Name: &StdErr,
+	//			Max:  &StdOutLimit,
+	//		},
+	//	},
+	//	CPULimit:    10000000000,
+	//	MemoryLimit: 1048576000,
+	//	ProcLimit:   50,
+	//	CopyIn: map[string]model.CmdFile{
+	//		"a.cpp": {
+	//			Content: code,
+	//		},
+	//	},
+	//	CopyOut:       []string{"stdout", "stderr"},
+	//	CopyOutCached: []string{"a.cpp", "aOut"},
+	//	CopyOutDir:    "1",
+	//}}}
+	var req model.Request
+	compileStr := fmt.Sprintf(CppCompileReq, strconv.Quote(*code))
+	err := json.Unmarshal([]byte(compileStr), &req)
+	if err != nil {
+		logx.Error(err)
+		return "",err
+	}
 
 	marshal, _ := json.Marshal(&req)
 	fmt.Println(string(marshal))
@@ -108,32 +146,68 @@ func (svc *ServiceContext) compileCpp(code *string) (string, error) {
 	return rt.Results[0].FileIDs["Main.class"], nil
 }
 
+var CppRunReq = `
+{
+    "cmd": [{
+        "args": ["a"],
+        "env": ["PATH=/usr/bin:/bin"],
+        "files": [{
+            "content": "%s"
+        }, {
+            "name": "stdout",
+            "max": 10240
+        }, {
+            "name": "stderr",
+            "max": 10240
+        }],
+        "cpuLimit": %d,
+        "memoryLimit": %d,
+        "procLimit": 50,
+        "strictMemoryLimit": false,
+        "copyIn": {
+            "a": {
+                "fileId": "%s"
+            }
+        }
+    }]
+}
+`
+
 func (svc *ServiceContext) runCpp(classId, input string, tl, sl uint64) (uint32, *JudgeResult, error) {
-	req := model.Request{Cmd: []model.Cmd{{
-		Args: []string{"aOut"},
-		Env:  []string{"PATH=/usr/bin:/bin"},
-		Files: []*model.CmdFile{
-			{
-				Content: &input,
-			},
-			{
-				Name: &StdOut,
-				Max:  &StdOutLimit,
-			},
-			{
-				Name: &StdErr,
-				Max:  &StdOutLimit,
-			},
-		},
-		CPULimit:    tl,
-		MemoryLimit: sl,
-		ProcLimit:   50,
-		CopyIn: map[string]model.CmdFile{
-			"aOut": {
-				FileID: &classId,
-			},
-		},
-	}}}
+	//req := model.Request{Cmd: []model.Cmd{{
+	//	Args: []string{"a"},
+	//	Env:  []string{"PATH=/usr/bin:/bin"},
+	//	Files: []*model.CmdFile{
+	//		{
+	//			Content: &input,
+	//		},
+	//		{
+	//			Name: &StdOut,
+	//			Max:  &StdOutLimit,
+	//		},
+	//		{
+	//			Name: &StdErr,
+	//			Max:  &StdOutLimit,
+	//		},
+	//	},
+	//	CPULimit:    tl,
+	//	MemoryLimit: sl,
+	//	ProcLimit:   50,
+	//	CopyIn: map[string]model.CmdFile{
+	//		"a": {
+	//			FileID: &classId,
+	//		},
+	//	},
+	//}}}
+
+	var req model.Request
+
+	compileStr := fmt.Sprintf(CppRunReq, input, tl,sl,classId)
+	err := json.Unmarshal([]byte(compileStr), &req)
+	if err != nil {
+		logx.Error(err)
+		return 0,nil,err
+	}
 
 	request, err := model.ConvertRequest(&req, "")
 	if err != nil {
